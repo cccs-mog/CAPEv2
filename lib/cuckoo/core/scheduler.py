@@ -107,7 +107,7 @@ class ScalingBoundedSemaphore(threading.Semaphore):
 
         """
         if not blocking and timeout is not None:
-            raise ValueError("can't specify timeout for non-blocking acquire")
+            raise ValueError("Cannot specify timeout for non-blocking acquire()")
         rc = False
         endtime = None
         with self._cond:
