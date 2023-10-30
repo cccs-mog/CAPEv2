@@ -171,7 +171,7 @@ class ScalingBoundedSemaphore(threading.Semaphore):
             log.info("Active analysis: %s" % active_analysis_count)
             machine_lock._value = 0
 
-    def check_for_starvation(self,available_count):
+    def check_for_starvation(self, available_count: int):
         """Check for preventing starvation from coming up after updating the limit.
         Take no parameter. 
         Return true on starvation. 
