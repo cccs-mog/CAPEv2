@@ -70,7 +70,7 @@ class ScalingBoundedSemaphore(threading.Semaphore):
     limit value. The acquire() method blocks if necessary until it can return
     without making the counter negative. If not given, value defaults to 1.
 
-    In this version of semaphore there is a upper limit where it's limit value
+    In this version of semaphore there is an upper limit where its limit value
     can never reach when it is changed. The idea behind it is that in machinery
     documentation there is a limit of machines that can be available so there is
     no point having it higher than that.
