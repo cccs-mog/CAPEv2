@@ -299,7 +299,7 @@ class TestDatabaseEngine:
              [("windows","x64","tag1,",8),("windows","x86","tag2,",2)],
              {"tag1":8,"tag2":2},
              "db_relevant_machines_to_tasks"),
-            #Assign tasks to their specific tags based on the number of machines for each of them
+            # Assign 43 tasks total containing a variety of tags to 40/80 available machines with the first tag, 2/2 available machines with the second tag and 1/2 available machines with the third tag
             ([("tag1",40),("tag2",2),("tag3",1)],
              [("windows","x64","tag1",80),("windows","x86","tag2",2),("linux","x64","tag3",2)],
              {"tag1":40,"tag2":2,"tag3":1},
