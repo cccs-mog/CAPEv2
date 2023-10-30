@@ -949,7 +949,7 @@ class Scheduler:
         while self.running:
             # Wait until the machine lock is not locked. This is only the case
             # when all machines are fully running, rather than "about to start"
-            # or still busy starting. This way we won't have race conditions
+            # or "still busy starting". This way we won't have race conditions
             # with finding out there are no available machines in the analysis
             # manager or having two analyses pick the same machine.
 
