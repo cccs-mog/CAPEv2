@@ -289,7 +289,7 @@ class TestDatabaseEngine:
     @pytest.mark.parametrize(
         "task_instructions,machine_instructions,expected_results,function",
         (
-            #Assign 10 tasks to 10 specific machines availables
+            # Assign 10 tasks with the same tag to 10 available machines with that tag
             ([("tag1",10)],
              [("windows","x64","tag1",10),("windows","x86","tag2",5),("linux","x64","tag3",2)],
              {"tag1":10},
