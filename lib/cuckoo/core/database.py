@@ -852,6 +852,90 @@ class Database(object, metaclass=Singleton):
         return False
 
     @classlock
+    def is_relevant_machine_available_for_tasks(self, task: Task) -> bool:
+        """Checks if a machine that is relevant to the given task is available
+        @return: boolean indicating if a relevant machine is available
+        """
+        task_archs, task_tags = self._task_arch_tags_helper(task)
+        os_version = self._package_vm_requires_check(task.package)
+        vms = self.list_machines(
+            locked=False, label=task.machine, platform=task.platform, tags=task_tags, arch=task_archs, os_version=os_version
+        )
+        if len(vms) > 0:
+            # There are? Awesome!
+            return True
+        return False
+
+    @classlock
+    def db_relevant_machines_to_tasks(self, tasks) -> []:
+        # if machine_id:
+        #    return self.db.lock_machine(label=machine_id)
+        #elif platform:
+        #    return self.db.lock_machine(platform=platform, tags=tags, arch=arch, os_version=os_version)
+        #return self.db.lock_machine(tags=tags, arch=arch, os_version=os_version)
+         #      
+         #       if label:
+         #           machines = machines.filter_by(label=label)
+         #       else:
+         #           machines = machines.filter_by(reserved=False)
+         #       if platform:
+         #           machines = machines.filter_by(platform=platform)
+         #       machines = self.filter_machines_by_arch(machines, arch)
+         #       if tags:
+         #           # machines = machines.filter(Machine.tags.all(Tag.name.in_(tags)))
+         #           for tag in tags:
+         #               machines = machines.filter(Machine.tags.any(name=tag))
+         #       if os_version:
+         #           machines = machines.filter(Machine.tags.any(Tag.name.in_(os_version)))
+
+        results = []
+        assigned_machines = []
+        for task in tasks:
+            task_archs, task_tags = self._task_arch_tags_helper(task)
+            os_version = self._package_vm_requires_check(task.package)
+            selected_vm = None
+            with self.Session() as session:
+                try:
+                    # Preventive checks.
+                    if task.machine and task.platform:
+                        # Wrong usage.
+                        session.close()
+                        return []
+                    elif task.machine and task_tags:
+                    # Also wrong usage.
+                        session.close()
+                        return []
+                    machines = session.query(Machine).options(joinedload(Machine.tags)).filter_by(locked=False)
+                    if task.machine:
+                        machines = machines.filter_by(label=task.machine)
+                    else:
+                        machines = machines.filter_by(reserved=False)
+                    if task.platform:
+                        machines = machines.filter_by(platform=task.platform)
+                    machines = self.filter_machines_by_arch(machines, task_archs)
+                    if task_tags:
+                        # machines = machines.filter(Machine.tags.all(Tag.name.in_(tags)))
+                        for tag in task_tags:
+                            machines = machines.filter(Machine.tags.any(name=tag))
+                    if os_version:
+                        machines = machines.filter(Machine.tags.any(Tag.name.in_(os_version)))
+                    for assigned in assigned_machines:
+                        machines = machines.filter(Machine.label.notlike(assigned.label))
+                     # Get the first free machine.
+                    machine = machines.filter_by(locked=False).first()
+                    #machine = machines.filter(Machine.label.not_in(assigned_machines)).first()
+                    if machine:
+                        selected_vm = machine
+                except SQLAlchemyError as e:
+                    log.debug("Database error batch scheduling machines: %s", e)
+                    return []
+            if selected_vm is not None:
+                assigned_machines.append(selected_vm)
+                self.set_status(task_id=task.id, status=TASK_RUNNING)
+                results.append(task)
+        return results
+
+    @classlock
     def is_serviceable(self, task: Task) -> bool:
         """Checks if the task is serviceable.
 

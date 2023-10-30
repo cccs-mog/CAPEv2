@@ -8,11 +8,13 @@ import shutil
 from tempfile import NamedTemporaryFile
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, inspect
+from sqlalchemy.exc import SQLAlchemyError
 
 from lib.cuckoo.common.path_utils import path_mkdir
 from lib.cuckoo.common.utils import store_temp_file
-from lib.cuckoo.core.database import Database, Machine, Tag, Task
+from lib.cuckoo.core.database import Database, Machine, Tag, Task, TASK_PENDING, TASK_FAILED_ANALYSIS, machines_tags, tasks_tags
+from lib.cuckoo.common.exceptions import CuckooOperationalError
 
 
 @pytest.fixture(autouse=True)
@@ -47,9 +49,19 @@ class TestDatabaseEngine:
         self.d = Database(dsn="sqlite://")
         # self.d.connect(dsn=self.URI)
         self.session = self.d.Session()
-        stmt = delete(Machine)
-        self.session.execute(stmt)
-        self.session.commit()
+        inspector = inspect(self.d.engine)
+        if inspector.get_table_names():
+            stmt = delete(Machine)
+            stmt2 = delete(Task)
+            stmt3 = delete(machines_tags)
+            stmt4 = delete(tasks_tags)
+            stmt5 = delete(Tag)
+            self.session.execute(stmt)
+            self.session.execute(stmt2)
+            self.session.execute(stmt3)
+            self.session.execute(stmt4)
+            self.session.execute(stmt5)
+            self.session.commit()
 
     def teardown_method(self):
         del self.d
@@ -273,3 +285,214 @@ class TestDatabaseEngine:
         task.tags = [Tag("tag1")]
         # tasks matching the available machines are serviceable
         assert self.d.is_serviceable(task) is is_serviceable
+
+    @pytest.mark.parametrize(
+        "task_instructions,machine_instructions,expected_results,function",
+        (
+            #Assign 10 tasks to 10 specific machines availables
+            ([("tag1",10)],
+             [("windows","x64","tag1",10),("windows","x86","tag2",5),("linux","x64","tag3",2)],
+             {"tag1":10},
+             "db_relevant_machines_to_tasks"),
+            #Assign 10 tasks to 10 specific machines availables
+            ([("tag1",8),("tag2",2)],
+             [("windows","x64","tag1,",10),("windows","x86","tag2,",2),("linux","x64","tag3,",2)],
+             {"tag1":8,"tag2":2},
+             "db_relevant_machines_to_tasks"),
+            #Assign tasks to their specific tags based on the number of machines for each of them
+            ([("tag1",40),("tag2",2),("tag3",1)],
+             [("windows","x64","tag1",80),("windows","x86","tag2",2),("linux","x64","tag3",2)],
+             {"tag1":40,"tag2":2,"tag3":1},
+             "db_relevant_machines_to_tasks"),
+        ),
+    )
+    def test_db_batch_submission(self,task_instructions,machine_instructions,expected_results,function):
+        errors = []
+        tasks = []
+        machines = []
+        cleanup_tasks = []
+
+        #Parsing machine instructions 
+        for machine_instruction in machine_instructions:
+            for i in range(machine_instruction[3]):
+                machine_name = str(machine_instruction[0]) + str(machine_instruction[1]) + str(i)
+                self.d.add_machine(name= machine_name,
+                                    label= machine_name,
+                                    ip="1.2.3.4",
+                                    platform=machine_instruction[0],
+                                    tags=machine_instruction[2],
+                                    interface="int0",
+                                    snapshot="snap0",
+                                    resultserver_ip="5.6.7.8",
+                                    resultserver_port=2043,
+                                    arch=machine_instruction[1],
+                                    reserved=False,
+                                    )
+                machines.append((machine_name,machine_instructions[2]))
+
+        #Parsing tasks instructions
+        for task_instruction in task_instructions:
+            for i in range(task_instruction[1]):
+                sample_name = "Sample_%s_%s"%(task_instruction[0],i)
+                with open(sample_name,"w") as f:
+                    f.write(sample_name)
+                cleanup_tasks.append(sample_name)
+                task = self.d.add_path(file_path=sample_name,tags=task_instruction[0])
+                task = self.d.view_task(task)
+                tasks.append(task)
+        
+        print("Number of tasks: %d" % len(tasks))
+        #Parse the expected results
+        total_task_to_be_assigned = 0
+        for result in expected_results.values():
+            total_task_to_be_assigned += result
+        
+        print("Total number of tasks that should be assigned: %d" % total_task_to_be_assigned)
+
+        total_task_assigned = 0
+        results = []
+        for tag in expected_results.keys():
+            results.append([tag,0])
+
+        while len(tasks) > 0:
+            watched_tasks = tasks[:5]
+            relevant_function = getattr(self.d,function)
+            relevant_tasks = relevant_function(watched_tasks)
+            for task in watched_tasks:
+                tasks.remove(task)
+            for task in relevant_tasks:
+                for i in range(len(results)):
+                    tags = [tag.name for tag in task.tags] 
+                    if results[i][0] == tags[0]:
+                        results[i][1] += 1
+                        break
+            total_task_assigned += len(relevant_tasks)
+        
+        #Cleanup
+        for file in cleanup_tasks:
+            os.remove(file)
+
+        #Test results
+        if total_task_assigned != total_task_to_be_assigned:
+            errors.append("Unexpected number of tasks assigned")
+        for tag in expected_results.keys():
+            for i in range(len(results)):
+                if tag == results[i][0] and expected_results[tag] != results[i][1]:
+                    print("%s --> %s vs %s" % (tag,expected_results[tag],results[i][1]))
+                    errors.append("Unexpected number of tasks assigned for tags")
+        assert not errors, "errors occured:\n{}".format("\n".join(errors))  
+
+    @pytest.mark.parametrize(
+        "task,machine,expected_result",
+        (
+            #Suitable task which is going to be locking this machine
+           ({"label":"task1","machine":None,"platform":"windows","tags":"tag1","package":None},
+           {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1","locked":False},
+           [0,False]
+           ),
+            #Suitable task which is going to be locking this machine from the label
+           ({"label":"task2","machine":"machine1","platform":None,"tags":None,"package":None},
+           {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1","locked":False},
+           [0,False]
+           ),
+            #Nonsuitable task which is going to make the function fail the locking (label + platform)
+           ({"label":"task3","machine":"machine1","platform":"windows","tags":None,"package":None},
+           {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1","locked":False},
+           [1,False]
+           ),
+            #Nonsuitable task which is going to make the function fail the locking (label + tags)
+           ({"label":"task4","machine":"machine1","platform":None,"tags":"tag1","package":None},
+           {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1","locked":False},
+           [1,False]
+           ),
+            #Nonsuitable task which is going to make the function fail the locking (label + platform + tags)
+           ({"label":"task5","machine":"machine1","platform":"windows","tags":"tag1","package":None},
+           {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1","locked":False},
+           [1,False]
+           ),
+           #Suitable task which is going to fail locking the machine as the machine is already locked
+           ({"label":"task6","machine":None,"platform":"windows","tags":"tag1","package":None},
+           {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1","locked":True},
+           [0,False]
+           ),
+           #Suitable task which is going to fail locking the machine because the machine is reserved
+           ({"label":"task7","machine":None,"platform":"windows","tags":"tag1","package":None},
+           {"label":"machine1","reserved":True,"platform":"windows","arch":"x64","tags":"tag1","locked":False},
+           [1,True]
+           ),
+           #Suitable task which is going to not locked the machine as it is not compatible (tags) 
+           ({"label":"task8","machine":None,"platform":"windows","tags":"tag1","package":None},
+           {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag2","locked":False},
+           [1,True]
+           ),
+           #Suitable task which is going to not locked the machine as it is not compatible (platform)
+           ({"label":"task9","machine":None,"platform":"windows","tags":"tag1","package":None},
+           {"label":"machine1","reserved":False,"platform":"linux","arch":"x64","tags":"tag1","locked":False},
+           [1,True]
+           ),
+           #Suitable task which is going to not locked the machine as it is not compatible (platform from package)
+           ({"label":"task10","machine":None,"platform":"windows","tags":"tag1","package":"dll"},
+           {"label":"machine1","reserved":False,"platform":"linux","arch":"x64","tags":"tag1","locked":False},
+           [1,True]
+           ),
+        ),
+    )
+    def test_lock_machine(self,task,machine,expected_result):
+        if machine["tags"] != None:
+            machine_name = str(machine["label"]) + "_" + str(machine["tags"])
+        else:
+            machine_name = str(machine["label"])
+        self.d.add_machine(name= machine_name,
+                            label= machine["label"],
+                            ip="1.2.3.4",
+                            platform=machine["platform"],
+                            tags=machine["tags"],
+                            arch=machine["arch"],
+                            interface="int0",
+                            snapshot="snap0",
+                            resultserver_ip="5.6.7.8",
+                            resultserver_port=2043,
+                            reserved= machine["reserved"]
+                            )
+        if machine["locked"]:
+            try:
+                queried_machine = self.session.query(Machine).filter_by(label=machine["label"])
+                if queried_machine:
+                    queried_machine.locked = True
+                    try:
+                        self.session.commit()
+                        self.session.refresh(machine)
+                    except SQLAlchemyError as e:
+                        self.session.rollback()
+                        pass
+            except SQLAlchemyError as e:
+                pass
+        sample_name = "Sample_%s_%s"%(task["label"],task["tags"])
+        with open(sample_name,"w") as f:
+            f.write(sample_name)
+        queried_task = self.d.add_path(file_path=sample_name,
+                               machine=task["machine"],
+                               platform=task["platform"],
+                               tags=task["tags"],
+                               )
+        
+        queried_task = self.d.view_task(queried_task)
+        queried_task_archs, queried_task_tags = self.d._task_arch_tags_helper(queried_task)
+        if task["package"] != None:
+            os_version = self.d._package_vm_requires_check(task["package"])
+        else:
+            os_version = None
+        print(self.d.get_available_machines()[0].tags)
+
+        if expected_result[1]:
+            with pytest.raises(CuckooOperationalError):
+                self.d.lock_machine(label=queried_task.machine,platform=queried_task.platform,tags=queried_task_tags,arch=queried_task_archs,os_version=os_version)
+        else:
+            self.d.lock_machine(label=queried_task.machine,platform=queried_task.platform,tags=queried_task_tags,arch=queried_task_archs,os_version=os_version)
+        #cleanup
+        os.remove(sample_name)
+
+        assert len(self.d.get_available_machines()) == expected_result[0]
+
+
+

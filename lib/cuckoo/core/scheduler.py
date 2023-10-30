@@ -9,7 +9,9 @@ import shutil
 import signal
 import threading
 import time
+from time import monotonic as _time
 from collections import defaultdict
+from math import floor
 
 from lib.cuckoo.common.config import Config
 from lib.cuckoo.common.constants import CUCKOO_ROOT
@@ -50,6 +52,7 @@ routing = Config("routing")
 enable_trim = int(Config("web").general.enable_trim)
 
 active_analysis_count = 0
+task_scheduled = 0
 
 
 class ScalingBoundedSemaphore(threading.Semaphore):
@@ -67,8 +70,8 @@ class ScalingBoundedSemaphore(threading.Semaphore):
     limit value. The acquire() method blocks if necessary until it can return
     without making the counter negative. If not given, value defaults to 1.
 
-    In this version of semaphore there is an upper limit that its limit value
-    can never reach when it is changed. The idea behind this is that in machinery
+    In this version of semaphore there is a upper limit where it's limit value
+    can never reach when it is changed. The idea behind it is that in machinery
     documentation there is a limit of machines that can be available so there is
     no point having it higher than that.
     """
@@ -77,6 +80,54 @@ class ScalingBoundedSemaphore(threading.Semaphore):
         threading.Semaphore.__init__(self, value)
         self._limit_value = value
         self._upper_limit = upper_limit
+        self._drift_value = floor(value/4)
+
+    def acquire(self, blocking=True, timeout=None):
+        """Acquire a semaphore, decrementing the internal counter by one.
+
+        When invoked without arguments: if the internal counter is larger than
+        zero on entry, decrement it by one and return immediately. If it is zero
+        on entry, block, waiting until some other thread has called release() to
+        make it larger than zero. This is done with proper interlocking so that
+        if multiple acquire() calls are blocked, release() will wake exactly one
+        of them up. The implementation may pick one at random, so the order in
+        which blocked threads are awakened should not be relied on. There is no
+        return value in this case.
+
+        When invoked with blocking set to true, do the same thing as when called
+        without arguments, and return true.
+
+        When invoked with blocking set to false, do not block. If a call without
+        an argument would block, return false immediately; otherwise, do the
+        same thing as when called without arguments, and return true.
+
+        When invoked with a timeout other than None, it will block for at
+        most timeout seconds.  If acquire does not complete successfully in
+        that interval, return false.  Return true otherwise.
+
+        """
+        if not blocking and timeout is not None:
+            raise ValueError("can't specify timeout for non-blocking acquire")
+        rc = False
+        endtime = None
+        with self._cond:
+            while self._value == 0:
+                if not blocking:
+                    break
+                if timeout is not None:
+                    if endtime is None:
+                        endtime = _time() + timeout
+                    else:
+                        timeout = endtime - _time()
+                        if timeout <= 0:
+                            break
+                self._cond.wait(timeout)
+            else:
+                self._value -= 1
+                rc = True
+        return rc
+
+    __enter__ = acquire
 
     def release(self):
         """Release a semaphore, incrementing the internal counter by one.
@@ -91,14 +142,16 @@ class ScalingBoundedSemaphore(threading.Semaphore):
         with self._cond:
             if self._value > self._upper_limit:
                 raise ValueError("Semaphore released too many times")
-
             if self._value >= self._limit_value:
+                #log.info("Lock release in vain!!!")
                 self._value = self._limit_value
                 self._cond.notify()
                 return
-
             self._value += 1
             self._cond.notify()
+
+    def __exit__(self, t, v, tb):
+        self.release()
 
     def update_limit(self, value):
         """Update the limit value for the semaphore
@@ -107,8 +160,35 @@ class ScalingBoundedSemaphore(threading.Semaphore):
         are validated against the upper limit.
 
         """
-        if value < self._upper_limit:
+        if value < self._upper_limit and value > 0:
+            #log.info("Lock limit changed to %s from %s with current value at %s",value,self._limit_value,self._value)
             self._limit_value = value
+            self._drift_value = floor(value/4)
+        if self._value > value:
+            self._value = value
+        #Add a check to ensure there is no more task thread created if the number of active analysis is greater than the total number of machines
+        if machine_lock._limit_value <= active_analysis_count:
+            log.info("Active analysis: %s" % active_analysis_count)
+            machine_lock._value = 0
+
+    def check_for_starvation(self,available_count):
+        """Check for preventing starvation from coming up after updating the limit.
+        Take no parameter. 
+        Return true on starvation. 
+        """
+        if self._value == 0 and active_analysis_count == 0:
+            log.debug("Lock got fully starved, reinitializing it")
+            self._value = self._limit_value
+            return True
+        #Resync of the lock value
+        if abs(self._value - available_count) > 0:
+            self._value = available_count
+        current_drift =  abs((self._limit_value - available_count) - active_analysis_count)
+        if current_drift > self._drift_value:
+            log.debug("Lock partially starved %s/%s with %s: active at %s and available at %s" % (self._value,self._limit_value,current_drift,active_analysis_count,available_count))
+            self._value += current_drift
+            return True
+        return False
 
 
 class CuckooDeadMachine(Exception):
@@ -349,6 +429,7 @@ class AnalysisManager(threading.Thread):
         dead_machine = False
         self.socks5s = _load_socks5_operational()
         aux = False
+
         # Initialize the analysis folders.
         if not self.init_storage():
             log.debug("Failed to initialize the analysis folder")
@@ -469,7 +550,8 @@ class AnalysisManager(threading.Thread):
 
             if dead_machine:
                 # Remove the guest from the database, so that we can assign a
-                # new guest when the task is being analyzed with another machine.
+                # new guest when the task is being analyzed with another
+                # machine.
                 self.db.guest_remove(guest_log)
                 machinery.delete_machine(self.machine.name)
 
@@ -483,7 +565,8 @@ class AnalysisManager(threading.Thread):
                 raise CuckooDeadMachine()
 
             try:
-                # Release the analysis machine. But only if the machine has not turned dead yet.
+                # Release the analysis machine. But only if the machine has
+                # not turned dead yet.
                 machinery.release(self.machine.label)
 
             except CuckooMachineError as e:
@@ -526,7 +609,8 @@ class AnalysisManager(threading.Thread):
             if hasattr(os, "symlink"):
                 latest = os.path.join(CUCKOO_ROOT, "storage", "analyses", "latest")
 
-                # First we have to remove the existing symbolic link, then we have to create the new one.
+                # First we have to remove the existing symbolic link, then we
+                # have to create the new one.
                 # Deal with race conditions using a lock.
                 latest_symlink_lock.acquire()
                 try:
@@ -764,8 +848,9 @@ class Scheduler:
             machinery.initialize(machinery_name)
         except CuckooMachineError as e:
             raise CuckooCriticalError(f"Error initializing machines: {e}")
-
-        # If the user wants to use the scaling bounded semaphore, check what machinery is specified, and then
+		# You set this value if you are using a machinery that is NOT auto-scaling
+        max_vmstartup_count = self.cfg.cuckoo.max_vmstartup_count
+ 		# If the user wants to use the scaling bounded semaphore, check what machinery is specified, and then
         # grab the required configuration key for setting the upper limit
         if self.cfg.cuckoo.scaling_semaphore:
             machinery_opts = machinery.options.get(machinery_name)
@@ -773,15 +858,12 @@ class Scheduler:
                 machines_limit = machinery_opts.get("total_machines_limit")
             elif machinery_name == "aws":
                 machines_limit = machinery_opts.get("dynamic_machines_limit")
-
-        # You set this value if you are using a machinery that is NOT auto-scaling
-        max_vmstartup_count = self.cfg.cuckoo.max_vmstartup_count
         if max_vmstartup_count:
-            # The BoundedSemaphore is used to prevent CPU starvation when starting up multiple VMs
-            machine_lock = threading.BoundedSemaphore(value=max_vmstartup_count)
-        # You set this value if you are using a machinery that IS auto-scaling
+        	# The BoundedSemaphore is used to prevent CPU starvation when starting up multiple VMs
+            machine_lock = threading.BoundedSemaphore(max_vmstartup_count)
+		# You set this value if you are using a machinery that IS auto-scaling
         elif self.cfg.cuckoo.scaling_semaphore and machines_limit:
-            # The ScalingBoundedSemaphore is used to keep feeding available machines from the pending tasks queue
+        	# The ScalingBoundedSemaphore is used to keep feeding available machines from the pending tasks queue
             machine_lock = ScalingBoundedSemaphore(value=len(machinery.machines()), upper_limit=machines_limit)
         else:
             machine_lock = threading.Lock()
@@ -838,6 +920,7 @@ class Scheduler:
 
     def start(self):
         """Start scheduler."""
+        global task_scheduled
         self.initialize()
 
         log.info("Waiting for analysis tasks")
@@ -857,25 +940,30 @@ class Scheduler:
             self._thr_periodic_log()
         # Update timer for semaphore limit value if enabled
         if self.cfg.cuckoo.scaling_semaphore and not self.cfg.cuckoo.max_vmstartup_count:
-            # Note that this variable only exists under these conditions
+			# Note that this variable only exists under these conditions
             scaling_semaphore_timer = time.time()
 
+        if self.cfg.cuckoo.batch_scheduling:
+            max_batch_scheduling_count = self.cfg.cuckoo.max_batch_count if self.cfg.cuckoo.max_batch_count else 5
         # This loop runs forever.
         while self.running:
-            # Update scaling bounded semaphore limit value, if enabled, based on the number of machines
-            if self.cfg.cuckoo.scaling_semaphore and not self.cfg.cuckoo.max_vmstartup_count:
-                # Every x seconds, update the semaphore limit. This requires a database call to machinery.availables(),
-                # hence waiting a bit between calls
-                if scaling_semaphore_timer + int(self.cfg.cuckoo.scaling_semaphore_update_timer) < time.time():
-                    machine_lock.update_limit(machinery.availables())
-                    # Note that this variable only exists under these conditions
-                    scaling_semaphore_timer = time.time()
-
             # Wait until the machine lock is not locked. This is only the case
             # when all machines are fully running, rather that about to start
             # or still busy starting. This way we won't have race conditions
             # with finding out there are no available machines in the analysis
             # manager or having two analyses pick the same machine.
+
+            # Update semaphore limit value if enabled based on the number of machines
+            if self.cfg.cuckoo.scaling_semaphore and not self.cfg.cuckoo.max_vmstartup_count:
+                # Every x seconds, update the semaphore limit. This requires a database call to machinery.availables(),
+                # hence waiting a bit between calls
+                if scaling_semaphore_timer + int(self.cfg.cuckoo.scaling_semaphore_update_timer) <time.time():
+                    machine_lock.update_limit(len(machinery.machines()))
+                    #Prevent full starvation, very unlikely to ever happen.
+                    machine_lock.check_for_starvation(machinery.availables())
+                    # Note that this variable only exists under these conditions
+                    scaling_semaphore_timer = time.time()
+
             if self.categories_need_VM:
                 if not machine_lock.acquire(False):
                     continue
@@ -904,7 +992,6 @@ class Scheduler:
 
             # If no machines are available, it's pointless to fetch for pending tasks. Loop over.
             # But if we analyze pcaps/static only it's fine
-            # ToDo verify that it works with static and file/url
             if self.categories_need_VM and not machinery.availables(include_reserved=True):
                 continue
             # Exits if max_analysis_count is defined in the configuration
@@ -913,38 +1000,81 @@ class Scheduler:
                 if active_analysis_count <= 0:
                     self.stop()
             else:
-                if self.categories_need_VM:
-                    # First things first, are there pending tasks?
-                    if not self.db.count_tasks(status=TASK_PENDING):
-                        continue
-                    relevant_machine_is_available = False
-                    # There are? Great, let's get them, ordered by priority and then oldest to newest
-                    for task in self.db.list_tasks(
-                        status=TASK_PENDING, order_by=(Task.priority.desc(), Task.added_on), options_not_like="node="
-                    ):
-                        # Can this task ever be serviced?
-                        if not self.db.is_serviceable(task):
-                            if self.cfg.cuckoo.fail_unserviceable:
-                                log.debug("Task #%s: Failing unserviceable task", task.id)
-                                self.db.set_status(task.id, TASK_FAILED_ANALYSIS)
-                                continue
-                            log.debug("Task #%s: Unserviceable task", task.id)
-                        relevant_machine_is_available = self.db.is_relevant_machine_available(task)
-                        if relevant_machine_is_available:
-                            break
-                    if not relevant_machine_is_available:
-                        task = None
+                if self.cfg.cuckoo.batch_scheduling:
+                    relevant_tasks = []
+                    if self.categories_need_VM:
+                        # First things first, are there pending tasks?
+                        if not self.db.count_tasks(status=TASK_PENDING):
+                            continue
+                        # There are? Great, let's get them, ordered by priority and then oldest to newest
+                        tasks = []
+                        for task in self.db.list_tasks(
+                            status=TASK_PENDING, order_by=(Task.priority.desc(), Task.added_on), options_not_like="node="
+                        ):
+                            # Can this task ever be serviced?
+                            if not self.db.is_serviceable(task):
+                                if self.cfg.cuckoo.fail_unserviceable:
+                                    log.debug("Task #%s: Failing unserviceable task", task.id)
+                                    self.db.set_status(task.id, TASK_FAILED_ANALYSIS)
+                                    continue
+                                log.debug("Task #%s: Unserviceable task", task.id)
+                            if self.db.is_relevant_machine_available_for_tasks(task):
+                                tasks.append(task)
+                        batching_number = max_batch_scheduling_count if machine_lock._value > max_batch_scheduling_count else machine_lock._value
+                        if len(tasks) > batching_number:
+                            tasks = tasks[:batching_number]
+                        relevant_tasks = self.db.db_relevant_machines_to_tasks(tasks)
                     else:
+                        relevant_tasks = []
+                        while True:
+                            task = self.db.fetch_task(self.analyzing_categories)
+                            if not task:
+                                break
+                            else:
+                                relevant_tasks.append(task)
+                    for task in relevant_tasks:
                         task = self.db.view_task(task.id)
+                        log.debug("Task #%s: Processing task", task.id)
+                        self.total_analysis_count += 1
+                        # Initialize and start the analysis manager.
+                        analysis = AnalysisManager(task, errors)
+                        analysis.daemon = True
+                        analysis.start()
+                        task_scheduled += 1
                 else:
-                    task = self.db.fetch_task(self.analyzing_categories)
-                if task:
-                    log.debug("Task #%s: Processing task", task.id)
-                    self.total_analysis_count += 1
-                    # Initialize and start the analysis manager.
-                    analysis = AnalysisManager(task, errors)
-                    analysis.daemon = True
-                    analysis.start()
+                    if self.categories_need_VM:
+                        # First things first, are there pending tasks?
+                        if not self.db.count_tasks(status=TASK_PENDING):
+                            continue
+                        relevant_machine_is_available = False
+                        # There are? Great, let's get them, ordered by priority and then oldest to newest
+                        for task in self.db.list_tasks(
+                            status=TASK_PENDING, order_by=(Task.priority.desc(), Task.added_on), options_not_like="node="
+                        ):
+                            # Can this task ever be serviced?
+                            if not self.db.is_serviceable(task):
+                                if self.cfg.cuckoo.fail_unserviceable:
+                                    log.debug("Task #%s: Failing unserviceable task", task.id)
+                                    self.db.set_status(task.id, TASK_FAILED_ANALYSIS)
+                                    continue
+                                log.debug("Task #%s: Unserviceable task", task.id)
+                            relevant_machine_is_available = self.db.is_relevant_machine_available(task)
+                            if relevant_machine_is_available:
+                                break
+                        if not relevant_machine_is_available:
+                            task = None
+                        else:
+                            task = self.db.view_task(task.id)
+                    else:
+                        task = self.db.fetch_task(self.analyzing_categories)
+                    if task:
+                        log.debug("Task #%s: Processing task", task.id)
+                        self.total_analysis_count += 1
+                        # Initialize and start the analysis manager.
+                        analysis = AnalysisManager(task, errors)
+                        analysis.daemon = True
+                        analysis.start()
+                        task_scheduled += 1
 
             # Deal with errors.
             try:
@@ -953,6 +1083,7 @@ class Scheduler:
                 pass
 
     def _thr_periodic_log(self):
+        global task_scheduled
         specific_available_machine_counts = defaultdict(int)
         for machine in self.db.get_available_machines():
             for tag in machine.tags:
@@ -976,15 +1107,33 @@ class Scheduler:
                     specific_locked_machine_counts[tag.name] += 1
             if machine.platform:
                 specific_locked_machine_counts[machine.platform] += 1
-
-        log.debug(
-            "# Pending Tasks: %d; # Specific Pending Tasks: %s; # Available Machines: %d; # Available Specific Machines: %s; # Locked Machines: %d; # Specific Locked Machines: %s; # Total Machines: %d;",
-            self.db.count_tasks(status=TASK_PENDING),
-            dict(specific_pending_task_counts),
-            self.db.count_machines_available(),
-            dict(specific_available_machine_counts),
-            len(self.db.list_machines(locked=True)),
-            dict(specific_locked_machine_counts),
-            len(self.db.list_machines()),
-        )
-        threading.Timer(10, self._thr_periodic_log).start()
+        if self.cfg.cuckoo.scaling_semaphore:
+            log.debug(
+                "# Pending Tasks: %d; # Specific Pending Tasks: %s; # Available Machines: %d; # Available Specific Machines: %s; # Locked Machines: %d; # Specific Locked Machines: %s; # Total Machines: %d; Lock value: %d/%d",
+                self.db.count_tasks(status=TASK_PENDING),
+                dict(specific_pending_task_counts),
+                self.db.count_machines_available(),
+                dict(specific_available_machine_counts),
+                len(self.db.list_machines(locked=True)),
+                dict(specific_locked_machine_counts),
+                len(self.db.list_machines()),
+                machine_lock._value,
+                machine_lock._limit_value
+            )
+        else:
+            log.debug(
+                "# Pending Tasks: %d; # Specific Pending Tasks: %s; # Available Machines: %d; # Available Specific Machines: %s; # Locked Machines: %d; # Specific Locked Machines: %s; # Total Machines: %d",
+                self.db.count_tasks(status=TASK_PENDING),
+                dict(specific_pending_task_counts),
+                self.db.count_machines_available(),
+                dict(specific_available_machine_counts),
+                len(self.db.list_machines(locked=True)),
+                dict(specific_locked_machine_counts),
+                len(self.db.list_machines())
+            )
+        if task_scheduled > 0:
+            log.debug("Number of assigned task in period: %s",task_scheduled)
+            task_scheduled = 0
+        thr = threading.Timer(10, self._thr_periodic_log)
+        thr.daemon = True
+        thr.start()

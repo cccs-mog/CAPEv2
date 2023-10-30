@@ -27,9 +27,9 @@ machinery = kvm
 # For Azure, this configuration key is "total_machines_limit"
 # For AWS, this configuration key is "dynamic_machines_limit"
 scaling_semaphore = off
-
-# A configurable wait time between updating the limit value of the scaling bounded semaphore
 scaling_semaphore_update_timer = 10
+batch_scheduling = on
+max_batch_count = 5
 
 # Enable creation of memory dump of the analysis machine before shutting
 # down. Even if turned off, this functionality can also be enabled at
