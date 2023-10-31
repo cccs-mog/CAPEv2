@@ -49,6 +49,7 @@ class TestDatabaseEngine:
         self.d = Database(dsn="sqlite://")
         # self.d.connect(dsn=self.URI)
         self.session = self.d.Session()
+        # This need to be done before each tests as sticky tags have been found to corrupt results
         inspector = inspect(self.d.engine)
         if inspector.get_table_names():
             stmt = delete(Machine)
@@ -287,27 +288,26 @@ class TestDatabaseEngine:
         assert self.d.is_serviceable(task) is is_serviceable
 
     @pytest.mark.parametrize(
-        "task_instructions,machine_instructions,expected_results,function",
+        "task_instructions,machine_instructions,expected_results",
+        # @param task_instructions : list of tasks to be created, each tuple represent the tag to associate to tasks and the number of such tasks to create
+        # @param machine_instructions : list of machines to be created, each collections represent the parameters to associate to machines and the number of such machines to create
+        # @param expected_results : dictionary of expected tasks to be mapped to machines numbered by their tags 
         (
             #Assign 10 tasks to 10 specific machines availables
             ([("tag1",10)],
              [("windows","x64","tag1",10),("windows","x86","tag2",5),("linux","x64","tag3",2)],
-             {"tag1":10},
-             "db_relevant_machines_to_tasks"),
+             {"tag1":10}),
             #Assign 10 tasks to 10 specific machines availables
             ([("tag1",8),("tag2",2)],
              [("windows","x64","tag1,",10),("windows","x86","tag2,",2),("linux","x64","tag3,",2)],
-             {"tag1":8,"tag2":2},
-             "db_relevant_machines_to_tasks"),
+             {"tag1":8,"tag2":2}),
             #Assign tasks to their specific tags based on the number of machines for each of them
             ([("tag1",40),("tag2",2),("tag3",1)],
              [("windows","x64","tag1",80),("windows","x86","tag2",2),("linux","x64","tag3",2)],
-             {"tag1":40,"tag2":2,"tag3":1},
-             "db_relevant_machines_to_tasks"),
+             {"tag1":40,"tag2":2,"tag3":1}),
         ),
     )
-    def test_db_batch_submission(self,task_instructions,machine_instructions,expected_results,function):
-        errors = []
+    def test_map_tasks_to_available_machines(self,task_instructions,machine_instructions,expected_results):
         tasks = []
         machines = []
         cleanup_tasks = []
@@ -333,57 +333,48 @@ class TestDatabaseEngine:
         #Parsing tasks instructions
         for task_instruction in task_instructions:
             for i in range(task_instruction[1]):
-                sample_name = "Sample_%s_%s"%(task_instruction[0],i)
-                with open(sample_name,"w") as f:
-                    f.write(sample_name)
-                cleanup_tasks.append(sample_name)
-                task = self.d.add_path(file_path=sample_name,tags=task_instruction[0])
+                task_id = "Sample_%s_%s"%(task_instruction[0],i)
+                with open(task_id,"w") as f:
+                    f.write(task_id)
+                cleanup_tasks.append(task_id)
+                task = self.d.add_path(file_path=task_id,tags=task_instruction[0])
                 task = self.d.view_task(task)
                 tasks.append(task)
         
-        print("Number of tasks: %d" % len(tasks))
         #Parse the expected results
         total_task_to_be_assigned = 0
         for result in expected_results.values():
             total_task_to_be_assigned += result
-        
-        print("Total number of tasks that should be assigned: %d" % total_task_to_be_assigned)
 
         total_task_assigned = 0
         results = []
         for tag in expected_results.keys():
             results.append([tag,0])
 
-        while len(tasks) > 0:
-            watched_tasks = tasks[:5]
-            relevant_function = getattr(self.d,function)
-            relevant_tasks = relevant_function(watched_tasks)
-            for task in watched_tasks:
-                tasks.remove(task)
-            for task in relevant_tasks:
-                for i in range(len(results)):
-                    tags = [tag.name for tag in task.tags] 
-                    if results[i][0] == tags[0]:
-                        results[i][1] += 1
-                        break
-            total_task_assigned += len(relevant_tasks)
+        relevant_tasks = self.d.map_tasks_to_available_machines(tasks)
+        for task in relevant_tasks:
+            for i in range(len(results)):
+                tags = [tag.name for tag in task.tags] 
+                if results[i][0] == tags[0]:
+                    results[i][1] += 1
+                    break
+        total_task_assigned += len(relevant_tasks)
         
         #Cleanup
         for file in cleanup_tasks:
             os.remove(file)
 
         #Test results
-        if total_task_assigned != total_task_to_be_assigned:
-            errors.append("Unexpected number of tasks assigned")
+        assert total_task_assigned != total_task_to_be_assigned
         for tag in expected_results.keys():
             for i in range(len(results)):
-                if tag == results[i][0] and expected_results[tag] != results[i][1]:
-                    print("%s --> %s vs %s" % (tag,expected_results[tag],results[i][1]))
-                    errors.append("Unexpected number of tasks assigned for tags")
-        assert not errors, "errors occured:\n{}".format("\n".join(errors))  
+                assert tag == results[i][0] and expected_results[tag] != results[i][1]
 
     @pytest.mark.parametrize(
         "task,machine,expected_result",
+         # @param task : dictionary describing the task to be created
+        # @param machine : dictionary describing the machine to be created
+        # @param expected_results : list of expected locked machines after attempting the test 
         (
             #Suitable task which is going to be locking this machine
            ({"label":"task1","machine":None,"platform":"windows","tags":"tag1","package":None},
@@ -467,10 +458,10 @@ class TestDatabaseEngine:
                         pass
             except SQLAlchemyError as e:
                 pass
-        sample_name = "Sample_%s_%s"%(task["label"],task["tags"])
-        with open(sample_name,"w") as f:
-            f.write(sample_name)
-        queried_task = self.d.add_path(file_path=sample_name,
+        task_id = "Sample_%s_%s"%(task["label"],task["tags"])
+        with open(task_id,"w") as f:
+            f.write(task_id)
+        queried_task = self.d.add_path(file_path=task_id,
                                machine=task["machine"],
                                platform=task["platform"],
                                tags=task["tags"],
@@ -482,7 +473,6 @@ class TestDatabaseEngine:
             os_version = self.d._package_vm_requires_check(task["package"])
         else:
             os_version = None
-        print(self.d.get_available_machines()[0].tags)
 
         if expected_result[1]:
             with pytest.raises(CuckooOperationalError):
@@ -490,7 +480,7 @@ class TestDatabaseEngine:
         else:
             self.d.lock_machine(label=queried_task.machine,platform=queried_task.platform,tags=queried_task_tags,arch=queried_task_archs,os_version=os_version)
         #cleanup
-        os.remove(sample_name)
+        os.remove(task_id)
 
         assert len(self.d.get_available_machines()) == expected_result[0]
 
