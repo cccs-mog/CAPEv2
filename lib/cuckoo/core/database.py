@@ -839,7 +839,7 @@ class Database(object, metaclass=Singleton):
         """Checks if a task is invalid based on parameters mismatch
         @param label: label of the machine asked for by the task
         @param platform: platform of the machine asked for by the task
-        @tags tags of task 
+        @param tags: tags of task 
         @return: boolean indicating if a task is valid
         """
         # Preventive checks.
