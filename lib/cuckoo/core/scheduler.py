@@ -69,7 +69,7 @@ class ScalingBoundedSemaphore(threading.Semaphore):
     limit value. The acquire() method blocks if necessary until it can return
     without making the counter negative. If not given, value defaults to 1.
 
-    In this version of semaphore there is a upper limit where it's limit value
+    In this version of semaphore there is an upper limit where its limit value
     can never reach when it is changed. The idea behind it is that in machinery
     documentation there is a limit of machines that can be available so there is
     no point having it higher than that.
@@ -106,7 +106,7 @@ class ScalingBoundedSemaphore(threading.Semaphore):
 
         """
         if not blocking and timeout is not None:
-            raise ValueError("can't specify timeout for non-blocking acquire")
+            raise ValueError("Cannot specify timeout for non-blocking acquire()")
         rc = False
         endtime = None
         with self._cond:
@@ -167,7 +167,7 @@ class ScalingBoundedSemaphore(threading.Semaphore):
         if machine_lock._limit_value <= active_analysis_count:
             machine_lock._value = 0
 
-    def check_for_starvation(self,available_count):
+    def check_for_starvation(self, available_count: int):
         """Check for preventing starvation from coming up after updating the limit.
         Take no parameter. 
         Return true on starvation. 
@@ -940,8 +940,8 @@ class Scheduler:
         # This loop runs forever.
         while self.running:
             # Wait until the machine lock is not locked. This is only the case
-            # when all machines are fully running, rather that about to start
-            # or still busy starting. This way we won't have race conditions
+            # when all machines are fully running, rather than "about to start"
+            # or "still busy starting". This way we won't have race conditions
             # with finding out there are no available machines in the analysis
             # manager or having two analyses pick the same machine.
 
@@ -949,7 +949,7 @@ class Scheduler:
             if self.cfg.cuckoo.scaling_semaphore and not self.cfg.cuckoo.max_vmstartup_count:
                 # Every x seconds, update the semaphore limit. This requires a database call to machinery.availables(),
                 # hence waiting a bit between calls
-                if scaling_semaphore_timer + int(self.cfg.cuckoo.scaling_semaphore_update_timer) <time.time():
+                if scaling_semaphore_timer + int(self.cfg.cuckoo.scaling_semaphore_update_timer) < time.time():
                     machine_lock.update_limit(len(machinery.machines()))
                     #Prevent full starvation, very unlikely to ever happen.
                     machine_lock.check_for_starvation(machinery.availables())

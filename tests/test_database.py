@@ -293,15 +293,17 @@ class TestDatabaseEngine:
         # @param machine_instructions : list of machines to be created, each collections represent the parameters to associate to machines and the number of such machines to create
         # @param expected_results : dictionary of expected tasks to be mapped to machines numbered by their tags 
         (
-            #Assign 10 tasks to 10 specific machines availables
+            # Assign 10 tasks with the same tag to 10 available machines with that tag
             ([("tag1",10)],
-             [("windows","x64","tag1",10),("windows","x86","tag2",5),("linux","x64","tag3",2)],
-             {"tag1":10}),
-            #Assign 10 tasks to 10 specific machines availables
+             [("windows","x64","tag1",10)],
+             {"tag1":10},
+             "db_relevant_machines_to_tasks"),
+            # Assign 10 tasks (8 with one tag, 2 with another) to 8 available machines with that tag and 2 available machines with the other tag
             ([("tag1",8),("tag2",2)],
-             [("windows","x64","tag1,",10),("windows","x86","tag2,",2),("linux","x64","tag3,",2)],
-             {"tag1":8,"tag2":2}),
-            #Assign tasks to their specific tags based on the number of machines for each of them
+             [("windows","x64","tag1,",8),("windows","x86","tag2,",2)],
+             {"tag1":8,"tag2":2},
+             "db_relevant_machines_to_tasks"),
+            # Assign 43 tasks total containing a variety of tags to 40/80 available machines with the first tag, 2/2 available machines with the second tag and 1/2 available machines with the third tag
             ([("tag1",40),("tag2",2),("tag3",1)],
              [("windows","x64","tag1",80),("windows","x86","tag2",2),("linux","x64","tag3",2)],
              {"tag1":40,"tag2":2,"tag3":1}),
