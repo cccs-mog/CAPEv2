@@ -854,7 +854,7 @@ class Database(object, metaclass=Singleton):
     @classlock
     def is_relevant_machine_available(self, task: Task,set_status=True) -> bool:
         """Checks if a machine that is relevant to the given task is available
-        @param task to validate
+        @param task: task to validate
         @return: boolean indicating if a relevant machine is available
         """
         task_archs, task_tags = self._task_arch_tags_helper(task)
