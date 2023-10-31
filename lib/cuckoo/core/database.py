@@ -1027,7 +1027,7 @@ class Database(object, metaclass=Singleton):
                 machines = machines.filter(Machine.arch.in_(arch))
         return machines
 
-    def filter_machines_to_task(machines,label=None,platform=None,tags=None,archs=None,os_version=[],include_reserved=False):
+    def filter_machines_to_task(machines: list, label=None, platform=None, tags=None, archs=None, os_version=[], include_reserved=False):
         """ Add filters to the given query based on the task"""
         if label:
             machines = machines.filter_by(label=label)
