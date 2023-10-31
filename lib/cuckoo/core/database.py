@@ -872,7 +872,7 @@ class Database(object, metaclass=Singleton):
     @classlock
     def map_tasks_to_available_machines(self, tasks: list) -> list:
          """Map tasks to available_machines to schedule in batch and prevent double spending of machines 
-        @param List of tasks to filter
+        @param tasks: List of tasks to filter
         @return: list of tasks that should be started by the scheduler
         """
         results = []
