@@ -345,7 +345,7 @@ class TestDatabaseEngine:
         
         #Parse the expected results
         total_task_to_be_assigned = 0
-        for result in expected_results.values():
+        total_task_to_be_assigned = sum(expected_results.values())
             total_task_to_be_assigned += result
 
         total_task_assigned = 0
