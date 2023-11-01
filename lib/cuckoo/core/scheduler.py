@@ -848,15 +848,14 @@ class Scheduler:
                 machines_limit = machinery_opts.get("total_machines_limit")
             elif machinery_name == "aws":
                 machines_limit = machinery_opts.get("dynamic_machines_limit")
-        
         # You set this value if you are using a machinery that is NOT auto-scaling
         max_vmstartup_count = self.cfg.cuckoo.max_vmstartup_count
         if max_vmstartup_count:
-        	# The BoundedSemaphore is used to prevent CPU starvation when starting up multiple VMs
+        # The BoundedSemaphore is used to prevent CPU starvation when starting up multiple VMs
             machine_lock = threading.BoundedSemaphore(max_vmstartup_count)
 		# You set this value if you are using a machinery that IS auto-scaling
         elif self.cfg.cuckoo.scaling_semaphore and machines_limit:
-        	# The ScalingBoundedSemaphore is used to keep feeding available machines from the pending tasks queue
+        # The ScalingBoundedSemaphore is used to keep feeding available machines from the pending tasks queue
             machine_lock = ScalingBoundedSemaphore(value=len(machinery.machines()), upper_limit=machines_limit)
         else:
             machine_lock = threading.Lock()
