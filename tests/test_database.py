@@ -12,10 +12,12 @@ from sqlalchemy import delete, inspect
 from sqlalchemy.exc import SQLAlchemyError
 
 from lib.cuckoo.common.path_utils import path_mkdir
+from lib.cuckoo.common.config import Config
 from lib.cuckoo.common.utils import store_temp_file
 from lib.cuckoo.core.database import Database, Machine, Tag, Task, TASK_PENDING, TASK_FAILED_ANALYSIS, machines_tags, tasks_tags
 from lib.cuckoo.common.exceptions import CuckooOperationalError
 
+web_conf = Config("web")
 
 @pytest.fixture(autouse=True)
 def storage(tmp_path, request):
@@ -346,7 +348,6 @@ class TestDatabaseEngine:
         #Parse the expected results
         total_task_to_be_assigned = 0
         total_task_to_be_assigned = sum(expected_results.values())
-            total_task_to_be_assigned += result
 
         total_task_assigned = 0
         results = []
@@ -367,13 +368,14 @@ class TestDatabaseEngine:
             os.remove(file)
 
         #Test results
-        assert total_task_assigned != total_task_to_be_assigned
+        assert total_task_assigned == total_task_to_be_assigned
         for tag in expected_results.keys():
             for i in range(len(results)):
-                assert tag == results[i][0] and expected_results[tag] != results[i][1]
+                if tag == results[i][0]:
+                    assert expected_results[tag] == results[i][1]
 
     @pytest.mark.parametrize(
-        "task,machine,expected_result",
+        "task,machine,expected_results",
          # @param task : dictionary describing the task to be created
         # @param machine : dictionary describing the machine to be created
         # @param expected_results : list of expected locked machines after attempting the test 
@@ -381,56 +383,56 @@ class TestDatabaseEngine:
             #Suitable task which is going to be locking this machine
            ({"label":"task1","machine":None,"platform":"windows","tags":"tag1","package":None},
            {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1","locked":False},
-           (0,False)
+           (0,False,True)
            ),
             #Suitable task which is going to be locking this machine from the label
            ({"label":"task2","machine":"machine1","platform":None,"tags":None,"package":None},
            {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1","locked":False},
-           (0,False)
+           (0,False,True)
            ),
             #Nonsuitable task which is going to make the function fail the locking (label + platform)
            ({"label":"task3","machine":"machine1","platform":"windows","tags":None,"package":None},
            {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1","locked":False},
-           (1,False)
+           (1,False,False)
            ),
             #Nonsuitable task which is going to make the function fail the locking (label + tags)
            ({"label":"task4","machine":"machine1","platform":None,"tags":"tag1","package":None},
            {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1","locked":False},
-           (1,False)
+           (1,False,False)
            ),
             #Nonsuitable task which is going to make the function fail the locking (label + platform + tags)
            ({"label":"task5","machine":"machine1","platform":"windows","tags":"tag1","package":None},
            {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1","locked":False},
-           (1,False)
+           (1,False,False)
            ),
            #Suitable task which is going to fail locking the machine as the machine is already locked
            ({"label":"task6","machine":None,"platform":"windows","tags":"tag1","package":None},
            {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1","locked":True},
-           (0,False)
+           (0,False,True)
            ),
            #Suitable task which is going to fail locking the machine because the machine is reserved
            ({"label":"task7","machine":None,"platform":"windows","tags":"tag1","package":None},
            {"label":"machine1","reserved":True,"platform":"windows","arch":"x64","tags":"tag1","locked":False},
-           (1,True)
+           (1,True,False)
            ),
            #Suitable task which is going to not locked the machine as it is not compatible (tags) 
            ({"label":"task8","machine":None,"platform":"windows","tags":"tag1","package":None},
            {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag2","locked":False},
-           (1,True)
+           (1,True,False)
            ),
            #Suitable task which is going to not locked the machine as it is not compatible (platform)
            ({"label":"task9","machine":None,"platform":"windows","tags":"tag1","package":None},
            {"label":"machine1","reserved":False,"platform":"linux","arch":"x64","tags":"tag1","locked":False},
-           (1,True)
+           (1,True,False)
            ),
            #Suitable task which is going to not locked the machine as it is not compatible (platform from package)
            ({"label":"task10","machine":None,"platform":"windows","tags":"tag1","package":"dll"},
            {"label":"machine1","reserved":False,"platform":"linux","arch":"x64","tags":"tag1","locked":False},
-           (1,True)
+           (1,True,False)
            ),
         ),
     )
-    def test_lock_machine(self,task,machine,expected_result):
+    def test_lock_machine(self,task,machine,expected_results):
         if machine["tags"] != None:
             machine_name = str(machine["label"]) + "_" + str(machine["tags"])
         else:
@@ -476,7 +478,7 @@ class TestDatabaseEngine:
             os_version = [vm_tag.strip() for vm_tag in web_conf.packages.get(task["package"]).split(",")] if web_conf.packages.get(task["package"]) else []
         else:
             os_version = None
-         number_of_expected_locked_machines, should_raise_exception, should_be_locked = expected_results
+        number_of_expected_locked_machines, should_raise_exception, should_be_locked = expected_results
         if should_raise_exception:
             with pytest.raises(CuckooOperationalError):
                 returned_machine = self.d.lock_machine(label=queried_task.machine,platform=queried_task.platform,tags=queried_task_tags,arch=queried_task_archs,os_version=os_version)
