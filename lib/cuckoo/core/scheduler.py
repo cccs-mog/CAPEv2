@@ -950,7 +950,7 @@ class Scheduler:
                 # hence waiting a bit between calls
                 if scaling_semaphore_timer + int(self.cfg.cuckoo.scaling_semaphore_update_timer) < time.time():
                     machine_lock.update_limit(len(machinery.machines()))
-                    #Prevent full starvation, very unlikely to ever happen.
+                    # Prevent full starvation, very unlikely to ever happen.
                     machine_lock.check_for_starvation(machinery.availables())
                     # Note that this variable only exists under these conditions
                     scaling_semaphore_timer = time.time()
