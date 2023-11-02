@@ -891,7 +891,7 @@ class Database(object, metaclass=Singleton):
                     # This loop is there in order to prevent double spending of machines by filtering out already mapped machines
                     for assigned in assigned_machines:
                         machines = machines.filter(Machine.label.notlike(assigned.label))
-                     # Get the first free machine.
+                    # Get the first free machine.
                     machine = machines.first()
                     if machine:
                         assigned_machines.append(machine)
