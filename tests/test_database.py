@@ -431,9 +431,9 @@ class TestDatabaseEngine:
            (1,True,False)
            ),
             #Suitable task which is going to be locking the machine as the os_version is compatible (os_version)
-           ({"label":"task10","machine":None,"platform":"windows","tags":"tag1","os_version":["win10"]},
+           ({"label":"task11","machine":None,"platform":"windows","tags":"tag1","os_version":["win10"]},
            {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1,win10","locked":False},
-           (1,False,True)
+           (0,False,True)
            ),
         ),
     )
@@ -475,13 +475,11 @@ class TestDatabaseEngine:
                                platform=task["platform"],
                                tags=task["tags"],
                                )
-        
         queried_task = self.d.view_task(queried_task)
         queried_task_archs = [tag.name for tag in queried_task.tags if tag.name in ("x86", "x64")]
         queried_task_tags = [tag.name for tag in queried_task.tags if tag.name not in  queried_task_archs]
-        number_of_expected_locked_machines, should_raise_exception, should_be_locked = expected_results
+        number_of_expected_available_machines, should_raise_exception, should_be_locked = expected_results
         if should_raise_exception:
-            print(output_machine.__dict__)
             with pytest.raises(CuckooOperationalError):
                 returned_machine = self.d.lock_machine(label=queried_task.machine,platform=queried_task.platform,tags=queried_task_tags,arch=queried_task_archs,os_version=task["os_version"])
                 assert returned_machine == None
@@ -494,12 +492,11 @@ class TestDatabaseEngine:
                 output_machine.__dict__.pop("tags",None)
                 output_machine.__dict__.pop('_sa_instance_state',None)
                 returned_machine.__dict__.pop('_sa_instance_state',None)
-                print("%s vs %s" % (returned_machine.__dict__,output_machine.__dict__))
                 assert output_machine.locked == should_be_locked 
                 assert returned_machine.__dict__ == output_machine.__dict__
         #cleanup
         os.remove(task_id)
-        assert len(self.d.get_available_machines()) == number_of_expected_locked_machines
+        assert len(self.d.get_available_machines()) == number_of_expected_available_machines
 
 
     @pytest.mark.parametrize(
@@ -629,7 +626,6 @@ class TestDatabaseEngine:
         with self.session as session:
             created_machines = session.query(Machine)
             output_machines =self.d.filter_machines_to_task(machines=created_machines,label=task["machine"],platform=task["platform"],tags=task_tags,archs=task_archs,os_version=task["os_version"],include_reserved=task["include_reserved"])
-            print("%s --> %s" %(task["label"],task["os_version"]))
             if type(output_machines) == type([]): 
                 assert len(output_machines) == expected_result
             else:

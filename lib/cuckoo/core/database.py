@@ -1039,8 +1039,6 @@ class Database(object, metaclass=Singleton):
         @param include_reserved: Flag to indicate if the list of machines returned should include reserved machines
         @return: list of machines after filtering the inputed one
         """
-        if len(machines) == 0:
-            return []
         if label:
             machines = machines.filter_by(label=label)
         elif not include_reserved:
