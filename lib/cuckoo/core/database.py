@@ -1029,7 +1029,7 @@ class Database(object, metaclass=Singleton):
         return machines
 
     def filter_machines_to_task(self,machines: list,label=None,platform=None,tags=None,archs=None,os_version=[],include_reserved=False) -> list:
-        """ Add filters to the given query based on the task
+        """ Add filters to the given list of machines based on the task
         @param machines: List of machines where the filter will be applied
         @param label: label of the machine(s) expected for the task
         @param platform: platform of the machine(s) expected for the task
