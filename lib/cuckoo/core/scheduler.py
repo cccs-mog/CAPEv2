@@ -163,7 +163,8 @@ class ScalingBoundedSemaphore(threading.Semaphore):
             self._drift_value = floor(value/4)
         if self._value > value:
             self._value = value
-        #Add a check to ensure there is no more task thread created if the number of active analysis is greater than the total number of machines
+        # Add a check to ensure there is no more task thread created if the number of active analysis is greater 
+        # than the total number of machines
         if machine_lock._limit_value <= active_analysis_count:
             machine_lock._value = 0
 
