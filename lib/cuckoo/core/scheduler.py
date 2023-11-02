@@ -174,7 +174,6 @@ class ScalingBoundedSemaphore(threading.Semaphore):
         Return true on starvation. 
         """
         if self._value == 0 and active_analysis_count == 0:
-            log.debug("Lock got fully starved, reinitializing it")
             self._value = self._limit_value
             return True
         # Resync of the lock value
@@ -182,7 +181,6 @@ class ScalingBoundedSemaphore(threading.Semaphore):
             self._value = available_count
         current_drift =  abs((self._limit_value - available_count) - active_analysis_count)
         if current_drift > self._drift_value:
-            log.debug("Lock partially starved %s/%s with %s: active at %s and available at %s" % (self._value,self._limit_value,current_drift,active_analysis_count,available_count))
             self._value += current_drift
             return True
         return False
