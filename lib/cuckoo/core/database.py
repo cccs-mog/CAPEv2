@@ -835,7 +835,7 @@ class Database(object, metaclass=Singleton):
 
         return task_archs, task_tags
 
-    def validate_task_parameters(self,label,platform,tags) -> bool:
+    def validate_task_parameters(self, label: str, platform: str, tags: list) -> bool:
         """Checks if a task is invalid based on parameters mismatch
         @param label: label of the machine asked for by the task
         @param platform: platform of the machine asked for by the task
