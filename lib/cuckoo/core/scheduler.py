@@ -930,7 +930,7 @@ class Scheduler:
             self._thr_periodic_log()
         # Update timer for semaphore limit value if enabled
         if self.cfg.cuckoo.scaling_semaphore and not self.cfg.cuckoo.max_vmstartup_count:
-			# Note that this variable only exists under these conditions
+		# Note that this variable only exists under these conditions
             scaling_semaphore_timer = time.time()
 
         if self.cfg.cuckoo.batch_scheduling:
