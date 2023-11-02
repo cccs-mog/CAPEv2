@@ -1086,7 +1086,7 @@ class Database(object, metaclass=Singleton):
         @os_version: tags to filter per OS version. Ex: winxp, win7, win10, win11
         @return: locked machine
         """
-        if not self.validate_task_parameters(label=label,platform=platform,tags=tags):
+        if not self.validate_task_parameters(label=label, platform=platform, tags=tags):
             return None
 
         with self.Session() as session:
