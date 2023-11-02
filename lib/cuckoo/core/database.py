@@ -887,7 +887,7 @@ class Database(object, metaclass=Singleton):
             with self.Session() as session:
                 try:
                     machines = session.query(Machine).options(joinedload(Machine.tags))
-                    machines = self.filter_machines_to_tasks(machines=machines,label=task.machine,platform=task.platform,tags=task_tags,archs=task_archs,os_version=os_version)
+                    machines = self.filter_machines_to_task(machines=machines,label=task.machine,platform=task.platform,tags=task_tags,archs=task_archs,os_version=os_version)
                     #This loop is there in order to prevent double spending of machines by filtering out already mapped machines
                     for assigned in assigned_machines:
                         machines = machines.filter(Machine.label.notlike(assigned.label))
@@ -1028,7 +1028,7 @@ class Database(object, metaclass=Singleton):
                 machines = machines.filter(Machine.arch.in_(arch))
         return machines
 
-    def filter_machines_to_tasks(self,machines: list,label=None,platform=None,tags=None,archs=None,os_version=[],include_reserved=False) -> list:
+    def filter_machines_to_task(self,machines: list,label=None,platform=None,tags=None,archs=None,os_version=[],include_reserved=False) -> list:
         """ Add filters to the given query based on the task
         @param machines: List of machines where the filter will be applied
         @param label: label of the machine(s) expected for the task
@@ -1039,6 +1039,8 @@ class Database(object, metaclass=Singleton):
         @param include_reserved: Flag to indicate if the list of machines returned should include reserved machines
         @return: list of machines after filtering the inputed one
         """
+        if len(machines) == 0:
+            return []
         if label:
             machines = machines.filter_by(label=label)
         elif not include_reserved:
@@ -1069,7 +1071,7 @@ class Database(object, metaclass=Singleton):
                 machines = session.query(Machine).options(joinedload(Machine.tags))
                 if locked is not None and isinstance(locked, bool):
                     machines = machines.filter_by(locked=locked)
-                machines = self.filter_machines_to_tasks(machines=machines,label=label,platform=platform,tags=tags,archs=arch,os_version=os_version,include_reserved=include_reserved)
+                machines = self.filter_machines_to_task(machines=machines,label=label,platform=platform,tags=tags,archs=arch,os_version=os_version,include_reserved=include_reserved)
                 return machines.all()
             except SQLAlchemyError as e:
                 print(e)
@@ -1093,7 +1095,7 @@ class Database(object, metaclass=Singleton):
 
             try:
                 machines = session.query(Machine)
-                machines = self.filter_machines_to_tasks(machines=machines,label=label,platform=platform,tags=tags,archs=arch,os_version=os_version)
+                machines = self.filter_machines_to_task(machines=machines,label=label,platform=platform,tags=tags,archs=arch,os_version=os_version)
                 # Check if there are any machines that satisfy the
                 # selection requirements.
                 if not machines.count():
@@ -1160,7 +1162,7 @@ class Database(object, metaclass=Singleton):
         with self.Session() as session:
             try:
                 machines = session.query(Machine).filter_by(locked=False)
-                machines = self.filter_machines_to_tasks(machines=machines,label=label,platform=platform,tags=tags,archs=arch,os_version=os_version,include_reserved=include_reserved)
+                machines = self.filter_machines_to_task(machines=machines,label=label,platform=platform,tags=tags,archs=arch,os_version=os_version,include_reserved=include_reserved)
                 return machines.count()
             except SQLAlchemyError as e:
                 log.debug("Database error counting machines: %s", e)

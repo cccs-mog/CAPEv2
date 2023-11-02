@@ -376,65 +376,70 @@ class TestDatabaseEngine:
 
     @pytest.mark.parametrize(
         "task,machine,expected_results",
-         # @param task : dictionary describing the task to be created
+        # @param task : dictionary describing the task to be created
         # @param machine : dictionary describing the machine to be created
         # @param expected_results : list of expected locked machines after attempting the test 
         (
             #Suitable task which is going to be locking this machine
-           ({"label":"task1","machine":None,"platform":"windows","tags":"tag1","package":None},
+           ({"label":"task1","machine":None,"platform":"windows","tags":"tag1","os_version":None},
            {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1","locked":False},
            (0,False,True)
            ),
             #Suitable task which is going to be locking this machine from the label
-           ({"label":"task2","machine":"machine1","platform":None,"tags":None,"package":None},
+           ({"label":"task2","machine":"machine1","platform":None,"tags":None,"os_version":None},
            {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1","locked":False},
            (0,False,True)
            ),
             #Nonsuitable task which is going to make the function fail the locking (label + platform)
-           ({"label":"task3","machine":"machine1","platform":"windows","tags":None,"package":None},
+           ({"label":"task3","machine":"machine1","platform":"windows","tags":None,"os_version":None},
            {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1","locked":False},
            (1,False,False)
            ),
             #Nonsuitable task which is going to make the function fail the locking (label + tags)
-           ({"label":"task4","machine":"machine1","platform":None,"tags":"tag1","package":None},
+           ({"label":"task4","machine":"machine1","platform":None,"tags":"tag1","os_version":None},
            {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1","locked":False},
            (1,False,False)
            ),
             #Nonsuitable task which is going to make the function fail the locking (label + platform + tags)
-           ({"label":"task5","machine":"machine1","platform":"windows","tags":"tag1","package":None},
+           ({"label":"task5","machine":"machine1","platform":"windows","tags":"tag1","os_version":None},
            {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1","locked":False},
            (1,False,False)
            ),
            #Suitable task which is going to fail locking the machine as the machine is already locked
-           ({"label":"task6","machine":None,"platform":"windows","tags":"tag1","package":None},
+           ({"label":"task6","machine":None,"platform":"windows","tags":"tag1","os_version":None},
            {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1","locked":True},
            (0,False,True)
            ),
            #Suitable task which is going to fail locking the machine because the machine is reserved
-           ({"label":"task7","machine":None,"platform":"windows","tags":"tag1","package":None},
+           ({"label":"task7","machine":None,"platform":"windows","tags":"tag1","os_version":None},
            {"label":"machine1","reserved":True,"platform":"windows","arch":"x64","tags":"tag1","locked":False},
            (1,True,False)
            ),
            #Suitable task which is going to not locked the machine as it is not compatible (tags) 
-           ({"label":"task8","machine":None,"platform":"windows","tags":"tag1","package":None},
+           ({"label":"task8","machine":None,"platform":"windows","tags":"tag1","os_version":None},
            {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag2","locked":False},
            (1,True,False)
            ),
            #Suitable task which is going to not locked the machine as it is not compatible (platform)
-           ({"label":"task9","machine":None,"platform":"windows","tags":"tag1","package":None},
+           ({"label":"task9","machine":None,"platform":"windows","tags":"tag1","os_version":None},
            {"label":"machine1","reserved":False,"platform":"linux","arch":"x64","tags":"tag1","locked":False},
            (1,True,False)
            ),
-           #Suitable task which is going to not locked the machine as it is not compatible (platform from package)
-           ({"label":"task10","machine":None,"platform":"windows","tags":"tag1","package":"dll"},
-           {"label":"machine1","reserved":False,"platform":"linux","arch":"x64","tags":"tag1","locked":False},
+            #Suitable task which is going to not locked the machine as it is not compatible (os_version)
+           ({"label":"task10","machine":None,"platform":"windows","tags":"tag1","os_version":["win10"]},
+           {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1,win7","locked":False},
            (1,True,False)
+           ),
+            #Suitable task which is going to be locking the machine as the os_version is compatible (os_version)
+           ({"label":"task10","machine":None,"platform":"windows","tags":"tag1","os_version":["win10"]},
+           {"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1,win10","locked":False},
+           (1,False,True)
            ),
         ),
     )
     def test_lock_machine(self,task,machine,expected_results):
         if machine["tags"] != None:
-            machine_name = str(machine["label"]) + "_" + str(machine["tags"])
+            machine_name = str(machine["label"]) + "_" + str(machine["tags"].replace(",","_"))
         else:
             machine_name = str(machine["label"])
         self.d.add_machine(name= machine_name,
@@ -474,17 +479,14 @@ class TestDatabaseEngine:
         queried_task = self.d.view_task(queried_task)
         queried_task_archs = [tag.name for tag in queried_task.tags if tag.name in ("x86", "x64")]
         queried_task_tags = [tag.name for tag in queried_task.tags if tag.name not in  queried_task_archs]
-        if task["package"] != None:
-            os_version = [vm_tag.strip() for vm_tag in web_conf.packages.get(task["package"]).split(",")] if web_conf.packages.get(task["package"]) else []
-        else:
-            os_version = None
         number_of_expected_locked_machines, should_raise_exception, should_be_locked = expected_results
         if should_raise_exception:
+            print(output_machine.__dict__)
             with pytest.raises(CuckooOperationalError):
-                returned_machine = self.d.lock_machine(label=queried_task.machine,platform=queried_task.platform,tags=queried_task_tags,arch=queried_task_archs,os_version=os_version)
+                returned_machine = self.d.lock_machine(label=queried_task.machine,platform=queried_task.platform,tags=queried_task_tags,arch=queried_task_archs,os_version=task["os_version"])
                 assert returned_machine == None
         else:
-            returned_machine = self.d.lock_machine(label=queried_task.machine,platform=queried_task.platform,tags=queried_task_tags,arch=queried_task_archs,os_version=os_version)
+            returned_machine = self.d.lock_machine(label=queried_task.machine,platform=queried_task.platform,tags=queried_task_tags,arch=queried_task_archs,os_version=task["os_version"])
             output_machine = self.d.list_machines()
             if output_machine and returned_machine is not None:
                 output_machine = output_machine[0]
@@ -500,5 +502,171 @@ class TestDatabaseEngine:
         assert len(self.d.get_available_machines()) == number_of_expected_locked_machines
 
 
+    @pytest.mark.parametrize(
+        "task,machines,expected_result",
+        # @param task : dictionary describing the task to be created
+        # @param machines : list of machines to be created
+        # @param expected_result : expected_result of the function (number of machines after being filtered) 
+        (
+            # Filtering by label only
+           ({"label":"task1","machine":"machine1","platform":None,"tags":None,"os_version":None,"include_reserved":False},
+           [{"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1"},{"label":"machine2","reserved":False,"platform":"windows","arch":"x64","tags":"tag1"}],
+           1
+           ),
+            # Filtering by label only
+           ({"label":"task2","machine":"machine1","platform":None,"tags":None,"os_version":None,"include_reserved":False},
+           [{"label":"machine2","reserved":False,"platform":"windows","arch":"x64","tags":"tag1"},{"label":"machine3","reserved":False,"platform":"linux","arch":"x64","tags":"tag2"}],
+           0
+           ),
+            # Filtering by platform only
+           ({"label":"task3","machine":None,"platform":"windows","tags":None,"os_version":None,"include_reserved":False},
+           [{"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1"},{"label":"machine2","reserved":False,"platform":"windows","arch":"x64","tags":"tag2"}],
+           2
+           ),
+           # Filtering by platform only
+           ({"label":"task4","machine":None,"platform":"windows","tags":None,"os_version":None,"include_reserved":False},
+           [{"label":"machine1","reserved":False,"platform":"linux","arch":"x64","tags":"tag1"},{"label":"machine2","reserved":False,"platform":"linux","arch":"x64","tags":"tag2"}],
+           0
+           ),
+            # Filtering by tags only
+           ({"label":"task5","machine":None,"platform":None,"tags":"tag1","os_version":None,"include_reserved":False},
+           [{"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1"},{"label":"machine2","reserved":False,"platform":"linux","arch":"x64","tags":"tag1"}],
+           2
+           ),
+            # Filtering by tags only
+           ({"label":"task6","machine":None,"platform":None,"tags":"tag1","os_version":None,"include_reserved":False},
+           [{"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag2"},{"label":"machine2","reserved":False,"platform":"linux","arch":"x64","tags":"tag2"}],
+           0
+           ),
+           # Filtering by archs only
+           ({"label":"task7","machine":None,"platform":None,"tags":"tag1,x64","os_version":None,"include_reserved":False},
+           [{"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1"},{"label":"machine2","reserved":False,"platform":"linux","arch":"x64","tags":"tag1"}],
+           2
+           ),
+            # Filtering by archs only
+           ({"label":"task8","machine":None,"platform":None,"tags":"tag1,x64","os_version":None,"include_reserved":False},
+           [{"label":"machine1","reserved":False,"platform":"windows","arch":"x86","tags":"tag2"},{"label":"machine2","reserved":False,"platform":"linux","arch":"x86","tags":"tag2"}],
+           0
+           ),
+            # Filtering by os_version only
+           ({"label":"task9","machine":None,"platform":None,"tags":None,"os_version":["win10"],"include_reserved":False},
+           [{"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1,win10"},{"label":"machine2","reserved":False,"platform":"linux","arch":"x64","tags":"tag1"}],
+           1
+           ),
+            # Filtering by os_version only
+           ({"label":"task10","machine":None,"platform":None,"tags":None,"os_version":["win10"],"include_reserved":False},
+           [{"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1"},{"label":"machine2","reserved":False,"platform":"linux","arch":"x64","tags":"tag1"}],
+           0
+           ),
+           # Filtering including the reserved machines 
+           ({"label":"task11","machine":None,"platform":"windows","tags":"tag1","os_version":None,"include_reserved":True},
+           [{"label":"machine1","reserved":True,"platform":"windows","arch":"x64","tags":"tag1"},{"label":"machine2","reserved":False,"platform":"windows","arch":"x64","tags":"tag1"}],
+           2
+           ),
+           # Filtering excluding the reserved machines 
+           ({"label":"task12","machine":None,"platform":"windows","tags":"tag1","os_version":None,"include_reserved":False},
+           [{"label":"machine1","reserved":True,"platform":"windows","arch":"x64","tags":"tag1"},{"label":"machine2","reserved":False,"platform":"linux","arch":"x64","tags":"tag1"}],
+           0
+           ),
+           # Filtering by tags and os_version
+           ({"label":"task13","machine":None,"platform":None,"tags":"tag1","os_version":["win10"],"include_reserved":False},
+           [{"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1,win10"},{"label":"machine2","reserved":False,"platform":"linux","arch":"x64","tags":"tag1"}],
+           1
+           ),
+            # Filtering by tags and os_version
+           ({"label":"task14","machine":None,"platform":None,"tags":"tag1","os_version":["win10"],"include_reserved":False},
+           [{"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1"},{"label":"machine2","reserved":False,"platform":"linux","arch":"x64","tags":"tag1"}],
+           0
+           ),
+            # Filtering by platform and tags
+           ({"label":"task15","machine":None,"platform":"windows","tags":"tag1","os_version":None,"include_reserved":False},
+           [{"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1"},{"label":"machine2","reserved":False,"platform":"linux","arch":"x64","tags":"tag2"}],
+           1
+           ),
+           # Filtering by platform and tags
+           ({"label":"task16","machine":None,"platform":"windows","tags":"tag1","os_version":None,"include_reserved":False},
+           [{"label":"machine1","reserved":False,"platform":"linux","arch":"x64","tags":"tag1"},{"label":"machine2","reserved":False,"platform":"windows","arch":"x64","tags":"tag2"}],
+           0
+           ),
+            # Filtering by platform,tags and os_version
+           ({"label":"task17","machine":None,"platform":"windows","tags":"tag1","os_version":["win10"],"include_reserved":False},
+           [{"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1,win10"},{"label":"machine2","reserved":False,"platform":"linux","arch":"x64","tags":"tag1"}],
+           1
+           ),
+           # Filtering by platform,tags and os_version
+           ({"label":"task18","machine":None,"platform":"windows","tags":"tag1","os_version":["win10"],"include_reserved":False},
+           [{"label":"machine1","reserved":False,"platform":"windows","arch":"x64","tags":"tag1"},{"label":"machine2","reserved":False,"platform":"linux","arch":"x64","tags":"tag1"}],
+           0
+           ),
+            # Filtering by platform,tags and os_version
+           ({"label":"task19","machine":None,"platform":"windows","tags":"tag1","os_version":["win10"],"include_reserved":False},
+           [],
+           0
+           ),
+        ),
+    )
+    def test_filter_machines_to_task(self,task,machines,expected_result):
+        for machine in machines:
+            machine_name = str(machine["label"]) + str(machine["platform"]) + str(machine["arch"]) + str(task["label"].replace("task",""))
+            self.d.add_machine(name= machine_name,
+                                    label= machine["label"],
+                                    ip="1.2.3.4",
+                                    platform=machine["platform"],
+                                    tags=machine["tags"],
+                                    interface="int0",
+                                    snapshot="snap0",
+                                    resultserver_ip="5.6.7.8",
+                                    resultserver_port=2043,
+                                    arch=machine["arch"],
+                                    reserved=machine["reserved"],
+                                    )
+        if task["tags"] is not None:
+            task_archs = [tag for tag in task["tags"].split(",") if tag in ("x86", "x64")]
+            task_tags = [tag for tag in task["tags"].split(",") if tag not in task_archs]
+        else:
+            task_archs = None
+            task_tags = None
+        with self.session as session:
+            created_machines = session.query(Machine)
+            output_machines =self.d.filter_machines_to_task(machines=created_machines,label=task["machine"],platform=task["platform"],tags=task_tags,archs=task_archs,os_version=task["os_version"],include_reserved=task["include_reserved"])
+            print("%s --> %s" %(task["label"],task["os_version"]))
+            if type(output_machines) == type([]): 
+                assert len(output_machines) == expected_result
+            else:
+                assert output_machines.count() == expected_result
 
+
+    @pytest.mark.parametrize(
+        "task,expected_result",
+        # @param task : dictionary describing the task to be validated
+        # @param expected_result : expected_result of the function tested
+        (
+             # No parameters
+           ({"label":None,"platform":None,"tags":None},
+           True),
+            # Only label
+           ({"label":"task1","platform":None,"tags":None},
+           True),
+            # Only platform
+           ({"label":None,"platform":"windows","tags":None},
+           True),
+            # Only tags
+           ({"label":None,"platform":None,"tags":"tag1"},
+           True),
+            # Label and platform
+           ({"label":"task1","platform":"windows","tags":None},
+           False),
+            # Label and tags
+           ({"label":"task1","platform":None,"tags":"tag1"},
+           False),
+            # Platform and tags
+           ({"label":None,"platform":"windows","tags":"tag1"},
+           True),
+           # Label, Platform and tags
+           ({"label":"task1","platform":"windows","tags":"tag1"},
+           False),
+        ),
+    )
+    def test_validate_task_parameters(self,task,expected_result):
+        assert self.d.validate_task_parameters(label=task["label"],platform=task["platform"],tags=task["tags"]) == expected_result
 
