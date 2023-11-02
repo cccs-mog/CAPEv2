@@ -854,7 +854,7 @@ class Database(object, metaclass=Singleton):
     @classlock
     def is_relevant_machine_available(self, task: Task, set_status: bool = True) -> bool:
         """Checks if a machine that is relevant to the given task is available
-        @param task : task to validate
+        @param task: task to validate
         @param set_status: boolean which indicate if the status of the task should be changed to TASK_RUNNING in the DB.
         @return: boolean indicating if a relevant machine is available
         """
