@@ -32,7 +32,7 @@ scaling_semaphore_update_timer = 10
 # Allow more than one task scheduled to be assigned at once for better scaling
 # The goal of this is to more efficiently assign tasks to available machines  
 batch_scheduling = off
-#The number of tasks that should be assigned to machine at once,optimal maximum highly dependant on deployment
+# The number of tasks that should be assigned to machine at once, optimal maximum highly dependant on deployment
 max_batch_count = 20
 
 # Enable creation of memory dump of the analysis machine before shutting
