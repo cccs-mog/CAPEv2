@@ -1012,7 +1012,9 @@ class Scheduler:
                             if self.db.is_relevant_machine_available(task=task,set_status=False):
                                 tasks_with_relevant_machine_available.append(task)
                         # The batching number is the number of tasks that will be considered to mapping to machines for starting
-                        # Max_batch_scheduling_count is refering to the batch_scheduling confing however this number is the maximum and capped for each usage by the number of locks available which refer to the number of expected availables machines.
+                        # Max_batch_scheduling_count is referring to the batch_scheduling config however this number 
+                        # is the maximum and capped for each usage by the number of locks available which refer to 
+                        # the number of expected available machines.
                         batching_number = max_batch_scheduling_count if machine_lock._value > max_batch_scheduling_count else machine_lock._value
                         if len(tasks_with_relevant_machine_available) > batching_number:
                             tasks_with_relevant_machine_available = tasks_with_relevant_machine_available[:batching_number]
