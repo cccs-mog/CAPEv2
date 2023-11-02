@@ -888,7 +888,7 @@ class Database(object, metaclass=Singleton):
                 try:
                     machines = session.query(Machine).options(joinedload(Machine.tags))
                     machines = self.filter_machines_to_task(machines=machines,label=task.machine,platform=task.platform,tags=task_tags,archs=task_archs,os_version=os_version)
-                    #This loop is there in order to prevent double spending of machines by filtering out already mapped machines
+                    # This loop is there in order to prevent double spending of machines by filtering out already mapped machines
                     for assigned in assigned_machines:
                         machines = machines.filter(Machine.label.notlike(assigned.label))
                      # Get the first free machine.
