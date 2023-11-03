@@ -850,11 +850,11 @@ class Scheduler:
         # You set this value if you are using a machinery that is NOT auto-scaling
         max_vmstartup_count = self.cfg.cuckoo.max_vmstartup_count
         if max_vmstartup_count:
-        # The BoundedSemaphore is used to prevent CPU starvation when starting up multiple VMs
+            # The BoundedSemaphore is used to prevent CPU starvation when starting up multiple VMs
             machine_lock = threading.BoundedSemaphore(max_vmstartup_count)
-		# You set this value if you are using a machinery that IS auto-scaling
+        # You set this value if you are using a machinery that IS auto-scaling
         elif self.cfg.cuckoo.scaling_semaphore and machines_limit:
-        # The ScalingBoundedSemaphore is used to keep feeding available machines from the pending tasks queue
+            # The ScalingBoundedSemaphore is used to keep feeding available machines from the pending tasks queue
             machine_lock = ScalingBoundedSemaphore(value=len(machinery.machines()), upper_limit=machines_limit)
         else:
             machine_lock = threading.Lock()
@@ -930,7 +930,7 @@ class Scheduler:
             self._thr_periodic_log()
         # Update timer for semaphore limit value if enabled
         if self.cfg.cuckoo.scaling_semaphore and not self.cfg.cuckoo.max_vmstartup_count:
-        # Note that this variable only exists under these conditions
+            # Note that this variable only exists under these conditions
             scaling_semaphore_timer = time.time()
 
         if self.cfg.cuckoo.batch_scheduling:
