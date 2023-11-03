@@ -292,6 +292,12 @@ class TestDatabaseEngine:
         # @param machine_instructions : list of machines to be created, each collections represent the parameters to associate to machines and the number of such machines to create
         # @param expected_results : dictionary of expected tasks to be mapped to machines numbered by their tags
         (
+            # TODO: No tasks, no machines
+            (
+                [],
+                [],
+                {},
+            ),
             # Assign 10 tasks with the same tag to 10 available machines with that tag
             (
                 [("tag1", 10)],
@@ -360,6 +366,7 @@ class TestDatabaseEngine:
 
         relevant_tasks = self.d.map_tasks_to_available_machines(tasks)
         for task in relevant_tasks:
+            # TODO: Refactor to be more pythonic (readable)
             for i in range(len(results)):
                 tags = [tag.name for tag in task.tags]
                 if results[i][0] == tags[0]:
@@ -374,6 +381,7 @@ class TestDatabaseEngine:
         # Test results
         assert total_task_assigned == total_task_to_be_assigned
         for tag in expected_results.keys():
+            # TODO: Refactor to be more pythonic (readable)
             for i in range(len(results)):
                 if tag == results[i][0]:
                     assert expected_results[tag] == results[i][1]
@@ -382,8 +390,22 @@ class TestDatabaseEngine:
         "task,machine,expected_results",
         # @param task : dictionary describing the task to be created
         # @param machine : dictionary describing the machine to be created
+        # TODO: This explanation does not explain what (0, False, True) represents
         # @param expected_results : list of expected locked machines after attempting the test
         (
+            # TODO: Generic "give me the first machine" case
+            (
+                {"label": "task1", "machine": None, "platform": None, "tags": None, "os_version": None},
+                {
+                    "label": "machine1",
+                    "reserved": False,
+                    "platform": "windows",
+                    "arch": "x64",
+                    "tags": "tag1",
+                    "locked": False,
+                },
+                (),
+            ),
             # Suitable task which is going to be locking this machine
             (
                 {"label": "task1", "machine": None, "platform": "windows", "tags": "tag1", "os_version": None},
@@ -530,7 +552,7 @@ class TestDatabaseEngine:
         ),
     )
     def test_lock_machine(self, task, machine, expected_results):
-        if machine["tags"] != None:
+        if machine["tags"] is not None:
             machine_name = str(machine["label"]) + "_" + str(machine["tags"].replace(",", "_"))
         else:
             machine_name = str(machine["label"])
@@ -555,10 +577,10 @@ class TestDatabaseEngine:
                     try:
                         self.session.commit()
                         self.session.refresh(machine)
-                    except SQLAlchemyError as e:
+                    except SQLAlchemyError:
                         self.session.rollback()
                         pass
-            except SQLAlchemyError as e:
+            except SQLAlchemyError:
                 pass
         task_id = "Sample_%s_%s" % (task["label"], task["tags"])
         with open(task_id, "w") as f:
@@ -610,6 +632,22 @@ class TestDatabaseEngine:
         # @param machines : list of machines to be created
         # @param expected_result : expected_result of the function (number of machines after being filtered)
         (
+            # TODO: Case where there is no filter and all machines are returned
+            (
+                {
+                    "label": "task1",
+                    "machine": None,
+                    "platform": None,
+                    "tags": None,
+                    "os_version": None,
+                    "include_reserved": False,
+                },
+                [
+                    {"label": "machine1", "reserved": False, "platform": "windows", "arch": "x64", "tags": "tag1"},
+                    {"label": "machine2", "reserved": False, "platform": "windows", "arch": "x64", "tags": "tag1"},
+                ],
+                2,
+            ),
             # Filtering by label only
             (
                 {
