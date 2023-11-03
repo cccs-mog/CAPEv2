@@ -839,7 +839,7 @@ class Scheduler:
             machinery.initialize(machinery_name)
         except CuckooMachineError as e:
             raise CuckooCriticalError(f"Error initializing machines: {e}")
- 		# If the user wants to use the scaling bounded semaphore, check what machinery is specified, and then
+        # If the user wants to use the scaling bounded semaphore, check what machinery is specified, and then
         # grab the required configuration key for setting the upper limit
         if self.cfg.cuckoo.scaling_semaphore:
             machinery_opts = machinery.options.get(machinery_name)
