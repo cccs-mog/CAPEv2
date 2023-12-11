@@ -24,6 +24,7 @@ disguise = yes
 evtx = no
 human_windows = yes
 human_linux = no
+dns_etw = no
 procmon = no
 recentfiles = no
 screenshots_windows = yes
