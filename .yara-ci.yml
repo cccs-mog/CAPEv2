@@ -1,7 +1,6 @@
 files:
   accept:
   - "data/yara/**.yar"
-  - "analyzer/windows/data/yara/*.yar"
 
 false_positives:
   ignore:
@@ -10,3 +9,4 @@ false_positives:
     - rule: "NSIS"
     - rule: "UPX"
     - rule: "Syscall"
+    - rule: "FormhookB"

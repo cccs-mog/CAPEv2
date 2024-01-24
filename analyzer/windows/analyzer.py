@@ -38,7 +38,6 @@ from lib.common.defines import ADVAPI32, EVENT_MODIFY_STATE, KERNEL32, MAX_PATH,
 from lib.common.exceptions import CuckooError, CuckooPackageError
 from lib.common.hashing import hash_file
 from lib.common.results import upload_to_host
-from lib.core.compound import create_custom_folders
 from lib.core.config import Config
 from lib.core.packages import choose_package
 from lib.core.pipe import PipeDispatcher, PipeForwarder, PipeServer, disconnect_pipes
@@ -402,9 +401,6 @@ class Analyzer:
         # E.g., for some samples it might be useful to run from %APPDATA%
         # instead of %TEMP%.
         if self.config.category == "file":
-            # Try to create the folders for the cases of the custom paths other than %TEMP%
-            if "curdir" in self.options:
-                create_custom_folders(self.options["curdir"])
             self.target = self.package.move_curdir(self.target)
         log.debug("New location of moved file: %s", self.target)
 
@@ -540,7 +536,7 @@ class Analyzer:
         try:
             pids = self.package.start(self.target)
         except NotImplementedError as e:
-            raise CuckooError('The package "{package_name}" doesn\'t contain a start function') from e
+            raise CuckooError(f'The package "{package_name}" doesn\'t contain a start function') from e
         except CuckooPackageError as e:
             raise CuckooError(f'The package "{package_name}" start function raised an error: {e}') from e
         except Exception as e:
@@ -569,11 +565,18 @@ class Analyzer:
         kernel_analysis = self.options.get("kernel_analysis", False)
 
         emptytime = None
-
+        complete_folder = hashlib.md5(f"cape-{self.config.id}".encode()).hexdigest()
+        complete_analysis_pattern = os.path.join(os.environ["TMP"], complete_folder)
+        # log.info("Complete analysis folder is: %s", complete_analysis_pattern)
         while self.do_run:
             self.time_counter = timeit.default_timer() - time_start
             if self.time_counter >= int(self.config.timeout):
                 log.info("Analysis timeout hit, terminating analysis")
+                ANALYSIS_TIMED_OUT = True
+                break
+
+            if os.path.isdir(complete_analysis_pattern):
+                log.info("Analysis termination requested by user")
                 ANALYSIS_TIMED_OUT = True
                 break
 
@@ -1443,7 +1446,10 @@ if __name__ == "__main__":
             complete_excp = traceback.format_exc()
             data["status"] = "exception"
             if "description" in data:
-                data["description"] += f"{data['description']}\n{complete_excp}"
+                if isinstance(data["description"], str):
+                    data["description"] = f"{data['description']}\n{complete_excp}"
+                else:
+                    data["description"] = f"{str(data['description'])}\n{complete_excp}"
             else:
                 data["description"] = complete_excp
         try:
