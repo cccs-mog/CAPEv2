@@ -1,6 +1,5 @@
 import logging
 import os
-from pathlib import Path, PureWindowsPath
 
 from lib.common.abstracts import Auxiliary
 from lib.core.config import Config
@@ -143,7 +142,7 @@ class DNS_ETW(Auxiliary):
         self.output_dir = "C:\\\\etw_dns"
         self.log_file = os.path.join(self.output_dir, "dns_provider.log")
         self.capture = ETW_provider(logfile=self.log_file,level=255,no_conout=True)
-        
+
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
