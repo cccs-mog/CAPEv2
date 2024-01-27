@@ -19,6 +19,10 @@ enabled = no
 [sysmon]
 enabled = no
 
+#Community
+[autorun]
+enabled = no
+
 [analysisinfo]
 enabled = yes
 
