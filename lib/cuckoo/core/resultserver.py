@@ -59,7 +59,7 @@ RESULT_UPLOADABLE = (
     b"stap",
     b"evtx",
     b"htmldump",
-    b"autorun",
+    b"autoruns",
 )
 RESULT_DIRECTORIES = RESULT_UPLOADABLE + (b"reports", b"logs")
 

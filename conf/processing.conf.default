@@ -20,7 +20,7 @@ enabled = no
 enabled = no
 
 #Community
-[autorun]
+[autoruns]
 enabled = no
 
 [analysisinfo]
