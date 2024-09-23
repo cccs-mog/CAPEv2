@@ -99,7 +99,8 @@ class Scheduler:
             return SchedulerCycleDelay.LOW_DISK_SPACE
 
         analysis_manager: Optional[AnalysisManager] = None
-        with self.db.session.begin():
+        log.debug(self.db.session.info["Usage"])
+        with self.db.session.begin(info={"Usage":"CAPE main loop work"}):
             max_machines_reached = False
             if self.machinery_manager and self.machinery_manager.running_machines_max_reached():
                 if not self.cfg.cuckoo.allow_static:
@@ -263,7 +264,7 @@ class Scheduler:
     def shutdown_machinery(self):
         """Shutdown machine manager (used to kill machines that still alive)."""
         if self.machinery_manager:
-            with self.db.session.begin():
+            with self.db.session.begin(info={"Usage":"Shutting down CAPE machinery"}):
                 self.machinery_manager.machinery.shutdown()
 
     def signal_handler(self, signum, frame):
@@ -284,8 +285,7 @@ class Scheduler:
     def start(self):
         """Start scheduler."""
         if self.machinery_manager:
-            with self.db.session.begin():
-                self.machinery_manager.initialize_machinery()
+            self.machinery_manager.initialize_machinery()
 
         # Message queue with threads to transmit exceptions (used as IPC).
         error_queue = queue.Queue()
@@ -327,7 +327,7 @@ class Scheduler:
             # log.debug().
             msgs = [f"# Active analysis: {self.active_analysis_count}"]
 
-            with self.db.session.begin():
+            with self.db.session.begin(info={"Usage":"Periodic logging"}):
                 pending_task_count = self.db.count_tasks(status=TASK_PENDING)
                 pending_task_stats = self.get_pending_task_stats()
                 msgs.extend(

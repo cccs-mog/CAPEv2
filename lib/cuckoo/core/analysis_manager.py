@@ -294,7 +294,7 @@ class AnalysisManager(threading.Thread):
         assert self.machinery_manager and self.machine and self.guest
 
         try:
-            with self.db.session.begin():
+            with self.db.session.begin(info={"Usage":"Starting machine"}):
                 self.machinery_manager.start_machine(self.machine)
 
             yield
@@ -310,7 +310,7 @@ class AnalysisManager(threading.Thread):
 
             # Remove the guest from the database, so that we can assign a
             # new guest when the task is being analyzed with another machine.
-            with self.db.session.begin():
+            with self.db.session.begin(info={"Usage":"Assign task and delete machine"}):
                 self.db.guest_remove(self.guest.id)
                 self.db.assign_machine_to_task(self.task, None)
                 self.machinery_manager.machinery.delete_machine(self.machine.name)
@@ -321,7 +321,7 @@ class AnalysisManager(threading.Thread):
 
             raise CuckooDeadMachine(self.machine.name) from e
 
-        with self.db.session.begin():
+        with self.db.session.begin(info={"Usage":"Stop machine"}):
             try:
                 self.machinery_manager.stop_machine(self.machine)
             except CuckooMachineError as e:
@@ -331,7 +331,7 @@ class AnalysisManager(threading.Thread):
 
         try:
             # Release the analysis machine, but only if the machine is not dead.
-            with self.db.session.begin():
+            with self.db.session.begin(info={"Usage":"Release machinery"}):
                 self.machinery_manager.machinery.release(self.machine)
         except CuckooMachineError as e:
             self.log.error(
@@ -388,13 +388,13 @@ class AnalysisManager(threading.Thread):
     def run_auxiliary(self) -> Generator[None, None, None]:
         aux = RunAuxiliary(task=self.task, machine=self.machine)
 
-        with self.db.session.begin():
+        with self.db.session.begin(info={"Usage":"Auxiliary start"}):
             aux.start()
 
         try:
             yield
         finally:
-            with self.db.session.begin():
+            with self.db.session.begin(info={"Usage":"Auxiliary stop"}):
                 aux.stop()
 
     def run_analysis_on_guest(self) -> None:
@@ -403,7 +403,7 @@ class AnalysisManager(threading.Thread):
 
         guest_manager = GuestManager(self.machine.name, self.machine.ip, self.machine.platform, self.task.id, self)
 
-        with self.db.session.begin():
+        with self.db.session.begin(info={"Usage":"Update clock for current analysis and set status"}):
             if Config("web").guacamole.enabled and hasattr(self.machinery_manager.machinery, "store_vnc_port"):
                 self.machinery_manager.machinery.store_vnc_port(self.machine.label, self.task.id)
             options["clock"] = self.db.update_clock(self.task.id)
@@ -427,7 +427,7 @@ class AnalysisManager(threading.Thread):
             self.log.debug("Failed to initialize the analysis folder")
             return False
 
-        with self.db.session.begin():
+        with self.db.session.begin(info={"Usage":"Perform analysis category check"}):
             category_early_escape = self.category_checks()
             if isinstance(category_early_escape, bool):
                 return category_early_escape
@@ -435,7 +435,7 @@ class AnalysisManager(threading.Thread):
         # At this point, we're sure that this analysis requires a machine.
         assert self.machinery_manager and self.machine and self.guest
 
-        with self.db.session.begin():
+        with self.db.session.begin(info={"Usage":"Scaling machinery pool"}):
             self.machinery_manager.scale_pool(self.machine)
 
         self.log.info("Starting analysis of %s '%s'", self.task.category.upper(), convert_to_printable(self.task.target))
@@ -448,7 +448,7 @@ class AnalysisManager(threading.Thread):
             else:
                 succeeded = True
             finally:
-                with self.db.session.begin():
+                with self.db.session.begin(info={"Usage":"Stopping guest"}):
                     self.db.guest_stop(self.guest.id)
 
         return succeeded
@@ -458,13 +458,13 @@ class AnalysisManager(threading.Thread):
         try:
             success = self.perform_analysis()
         except CuckooDeadMachine:
-            with self.db.session.begin():
+            with self.db.session.begin(info={"Usage":"CAPE dead machine cleanup"}):
                 # Put the task back in pending so that the schedule can attempt to
                 # choose a new machine.
                 self.db.set_status(self.task.id, TASK_PENDING)
             raise
         else:
-            with self.db.session.begin():
+            with self.db.session.begin(info={"Usage":"CAPE successful analysis cleanup"}):
                 self.db.set_status(self.task.id, TASK_COMPLETED)
                 self.log.info("Completed analysis %ssuccessfully.", "" if success else "un")
 

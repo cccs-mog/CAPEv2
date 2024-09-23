@@ -130,16 +130,15 @@ class Machinery:
             mmanager_opts["machines"] = str(mmanager_opts["machines"]).strip().split(",")
 
     def initialize(self) -> None:
-        """Read, load, and verify machines configuration."""
-        # Machine table is cleaned to be filled from configuration file
-        # at each start.
-        self.db.clean_machines()
+        with self.db.session.begin(info={"Usage":"Cleaning_machines"}):
+            self.db.clean_machines()
 
-        # Load.
-        self._initialize()
-
-        # Run initialization checks.
-        self._initialize_check()
+        with self.db.session.begin(info={"Usage":"CAPE machinery initialization"}):
+            # Load.
+            self._initialize()
+        with self.db.session.begin(expire_on_commit=False,info={"Usage":"CAPE machinery initialization check"} ):
+            # Run initialization checks.
+            self._initialize_check()
 
     def _initialize(self) -> None:
         """Read configuration."""

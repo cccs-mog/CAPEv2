@@ -313,7 +313,7 @@ class MachineryManager:
             return
 
         while True:
-            with self.db.session.begin():
+            with self.db.session.begin(info={"Usage":"Scaling bounded semaphore"}):
                 # Here be dragons! Making these calls on the ScalingBoundedSemaphore is not
                 # thread safe.
                 self.machine_lock.update_limit(len(self.machinery.machines()))
